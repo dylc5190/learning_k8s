@@ -1,0 +1,198 @@
+* RBAC
+* Service Account
+
+RBAC
+====
+
+- Setup
+
+https://docs.bitnami.com/kubernetes/how-to/configure-rbac-in-your-kubernetes-cluster/ use case 1
+
+[Node]
+$ openssl genrsa -out usr1.key 2048
+$ openssl req -new -key usr1.key -out usr1.csr -subj "/CN=usr1/O=dev"
+
+[Master]
+$ sudo openssl x509 -req -in usr1.csr -CA /etc/kubernetes/pki/ca.crt -CAkey /etc/kubernetes/pki/ca.key -CAcreateserial -out usr1.crt -days 500
+
+[Node]
+# copy the certificate file usr1.crt and master:/etc/kubernetes/pki/ca.crt to current directory
+# ca.crt is used to verify the certificate from apiserver. if missing, you'll get the following error
+#  Unable to connect to the server: x509: certificate signed by unknown authority
+#
+# 1. create a cluster
+#    a file config-demo will be created. if not specified, ~/.kube/config is created.
+$ kubectl config --kubeconfig=config-demo set-cluster dev --server=https://10.1.1.101:6443 --certificate-authority=ca.crt
+# 2. create a user
+$ kubectl config --kubeconfig=config-demo set-credentials usr1 --client-certificate=usr1.crt  --client-key=usr1.key
+# 3. create a context
+$ kubectl config --kubeconfig=config-demo set-context ctx1 --cluster=dev --namespace=ns1 --user=usr1
+# 4. run a command with the config we just created
+#    you'll get error now because something has not been done yet in Master
+$ kubectl config --kubeconfig=config-demo use-context ctx1
+$ kubectl --kubeconfig=config-demo --context=ctx1 get pods
+
+[Master]
+$ kubectl create ns ns1
+$ kubectl apply -f RoleBinding.yaml
+$ kubectl apply -f Role.yaml
+$ kubectl apply -f Pod.yaml -n ns1
+
+[Node]
+# run those commands again and they should be OK now
+$ kubectl config --kubeconfig=config-demo use-context ctx1
+$ kubectl --kubeconfig=config-demo --context=ctx1 get pods
+
+- About certificates
+
+in the packet capture,
+ certificate provided by client is client-certificate-data in .kube/config
+ certificate responded from server is /etc/kubernetes/pki/apiserver.cr
+in .kube/config
+ certificate-authority-data is /etc/kubernetes/pki/ca.crt
+ where is client-certificate-data from? 
+  my guess: user generates csr and request cluster ca to sign. k8s doc mentions cfssl tool. is it the general method? 
+
+Service Account
+===============
+
+$ kubectl create sa sa1
+$ kubectl describe sa sa1
+Name:                sa1
+Namespace:           default
+Labels:              <none>
+Annotations:         <none>
+Image pull secrets:  <none>
+Mountable secrets:   sa1-token-fh9tq
+Tokens:              sa1-token-fh9tq
+Events:              <none>
+$ kubectl describe secret sa1-token-fh9tq
+Name:         sa1-token-fh9tq
+Namespace:    default
+Labels:       <none>
+Annotations:  kubernetes.io/service-account.name: sa1
+              kubernetes.io/service-account.uid: d5e921a7-ae8a-11e9-8dab-08002767df78
+
+Type:  kubernetes.io/service-account-token
+
+Data
+====
+ca.crt:     1025 bytes
+namespace:  7 bytes
+token:      <omitted>
+$ kubectl apply -f Pod_with_sa1.yaml
+$ kubectl exec -it sa-demo sh
+/ # ls -l /var/run/secrets/kubernetes.io/serviceaccount/
+total 0
+lrwxrwxrwx    1 root     root            13 Jul 25 03:19 ca.crt -> ..data/ca.crt
+lrwxrwxrwx    1 root     root            16 Jul 25 03:19 namespace -> ..data/namespace
+lrwxrwxrwx    1 root     root            12 Jul 25 03:19 token -> ..data/token
+
+$ kubectl apply -f sa1_secret.yaml
+I expect the token is changed but it's not. Why?
+$ kubectl describe secret sa1-secret
+Name:         sa1-secret
+Namespace:    default
+Labels:       <none>
+Annotations:  kubernetes.io/service-account.name: sa1
+              kubernetes.io/service-account.uid: d5e921a7-ae8a-11e9-8dab-08002767df78
+
+Type:  kubernetes.io/service-account-token
+
+Data
+====
+ca.crt:     1025 bytes
+namespace:  7 bytes
+token:      <omitted>
+
+$ kubectl apply -f Pod_with_sa1-1.yaml
+$ kubectl exec -it sa-demo-1 sh
+/ # cat /var/run/secrets/kubernetes.io/serviceaccount/token
+it's the same as sa-demo. how to apply new token?
+
+- Question
+
+kubectl create rolebinding my-sa-view --role=pod-reader --serviceaccount=ns3:zzz
+ create a service account in namesapce default but sa is in namespace ns3
+ this command will succeed but both this sa account and namespace ns3 do not even exist. what does this mean?
+ sa must be in the form of namespace:sa_name.
+
+- Projected Token
+
+$ kubectl edit pod kube-apiserver-coreos1 -n kube-system
+add flags (if not doing this, the following pod cannot be created)
+- --service-account-issuer=api
+- --service-account-signing-key-file=/etc/kubernetes/pki/apiserver.key
+- --service-account-api-audiences=api
+$ kubectl apply -f Pod_Projected_Token.yaml
+$ kubectl exec -it sa1-token-demo sh
+/ # ls /var/run/secrets/
+abc            kubernetes.io
+/ # ls /var/run/secrets/kubernetes.io/serviceaccount/
+ca.crt     namespace  token
+/ # cat /var/run/secrets/abc
+after ten minutes
+/ # cat /var/run/secrets/abc
+
+both tokens exist, how to know which one is used?
+the projected token is not a secret. I think it's managed by apiserver.
+
+- Misc
+
+sa contains secret
+ secret contains ca.crt and token
+
+https://kubernetes.io/docs/tasks/access-application-cluster/configure-access-multiple-clusters/
+
+https://k2r2bai.com/2018/01/08/kubernetes/rbac-sa-kubectl/
+$ kubectl create ns dev
+$ kubectl -n dev create sa dev
+$ SECRET=$(kubectl -n dev get sa dev -o go-template='{{range .secrets}}{{.name}}{{end}}')
+$ API_SERVER="https://1.2.3.4:6443"
+$ CA_CERT=$(kubectl -n dev get secret ${SECRET} -o yaml | awk '/ca.crt:/{print $2}')
+$ cat <<EOF > dev.conf
+apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    certificate-authority-data: $CA_CERT
+    server: $API_SERVER
+  name: cluster
+EOF
+$ TOKEN=$(kubectl -n dev get secret ${SECRET} -o go-template='{{.data.token}}')
+$ kubectl config set-credentials dev-user --token=`echo ${TOKEN} | base64 -d` --kubeconfig=dev.conf
+User "dev-user" set.
+$ kubectl config set-context default --cluster=cluster --user=dev-user --kubeconfig=dev.conf
+Context "default" created.
+$ kubectl config use-context default --kubeconfig=dev.conf
+Switched to context "default".
+$ cat <<EOF > dev-user-role.yml
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  namespace: dev
+  name: dev-user-pod
+rules:
+- apiGroups: ["*"]
+  resources: ["pods", "pods/log"]
+  verbs: ["get", "watch", "list", "update", "create", "delete"]
+EOF
+$ kubectl apply -f dev-user-role.yml
+$ kubectl create rolebinding dev-view-pod --role=dev-user-pod --serviceaccount=dev:dev --namespace=dev
+rolebinding.rbac.authorization.k8s.io/dev-view-pod created
+
+$ kubectl --kubeconfig=dev.conf apply -f pod.yaml
+Error from server (Forbidden): error when retrieving current configuration of:
+Resource: "/v1, Resource=pods", GroupVersionKind: "/v1, Kind=Pod"
+Name: "kube-demo", Namespace: "default"
+Object: ...
+from server for: "pod.yaml": pods "kube-demo" is forbidden: User "system:serviceaccount:dev:dev" cannot get resource "pods" in API group "" in the namespace "default"
+$ kubectl -n dev --kubeconfig=dev.conf apply -f pod.yaml
+pod/kube-demo created
+$ kubectl --kubeconfig=dev.conf get po
+Error from server (Forbidden): pods is forbidden: User "system:serviceaccount:dev:dev" cannot list resource "pods" in API group "" in the namespace "default"
+$ kubectl -n dev --kubeconfig=dev.conf get po
+NAME        READY   STATUS    RESTARTS   AGE
+kube-demo   1/1     Running   0          2m21s
+$ kubectl -n dev --kubeconfig=dev.conf exec -ti kube-demo sh
+Error from server (Forbidden): pods "kube-demo" is forbidden: User "system:serviceaccount:dev:dev" cannot create resource "pods/exec" in API group "" in the namespace "dev"

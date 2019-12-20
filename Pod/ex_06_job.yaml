@@ -1,0 +1,23 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: job-demo
+spec:
+  completions: 10
+  parallelism: 5
+  template:
+    spec:
+      containers:
+      - name: container-01
+        image: python:alpine3.8
+        command: ["sh", "-c", "echo `hostname` >> /tmp/1.txt"]
+        volumeMounts:
+          - name: test-volume
+            mountPath: /tmp
+      restartPolicy: Never
+      volumes:
+        - name: test-volume
+          hostPath:
+            path: "/tmp"
+  backoffLimit: 4
+

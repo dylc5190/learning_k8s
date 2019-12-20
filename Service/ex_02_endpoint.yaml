@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: svc-demo
+spec:
+  ports:
+  - port: 13000
+    targetPort: 3000
+    protocol: TCP	# optional
+    name: mysvc
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: svc-demo	# same as service name
+subsets:
+- addresses:
+  -IP: 1.2.3.4
+  ports:
+  - port: 1234
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deployment-demo
+  labels:
+    app: demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo
+  template:
+    metadata:
+      labels:
+        app: demo
+    spec:
+      containers:
+      - name: container-01
+        image: python:alpine3.8
+        command: ["sh", "-c", "--" ]
+        args: [ "while true; do sleep 30; done;" ]
+        ports:
+        - containerPort: 3000
+

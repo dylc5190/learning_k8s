@@ -1,0 +1,38 @@
+coreos
+ - ESX: download ova
+   - login and set up user account: kubeadm/https://kb.vmware.com/s/article/2109161
+ - VBOX: download iso
+ - add a user, foo for example
+   sudo vi /etc/sudoers.d/mysudoers
+     foo ALL=(ALL) NOPASSWD: ALL
+
+[Master and Nodes]  
+install kubeadm
+ https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/
+
+[Master]
+(as root)
+kubeadm init --pod-network-cidr=192.168.0.0/16 
+ - specify --pod-network-cidr to avoid duplicate with host network. if using calico add-on, be sure the pod-network is the same.
+ - add --apiserver-advertise-address=10.1.1.101 in case kubeadm chooses the wrong one when there are multiple IP addresses in your environment. 
+ - follow the suggestions from output.
+ - errors I got
+   - not enable docker
+   - need to clean /var/lib/etcd
+   - CPU needs to be at least 2
+   - add hostname to /etc/hosts
+   - path of kubelet is not added to PATH
+
+(as normal user)
+kubectl apply -f https://docs.projectcalico.org/v3.8/manifests/calico.yaml
+ - other add-ons: https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/
+ - got a problem that calico (3.8 and 3.9) cannot write to /usr/ because of the design of coreos so I changed to flannel and it works.
+   kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/2140ac876ef134e0ed5af15c65e414cf26827915/Documentation/kube-flannel.yml
+
+[Node]
+(as root)
+kubeadm join 10.1.1.101:6443 --token mho4oz.t1weinebhtpy7r4k --discovery-token-ca-cert-hash sha256:732ede64e7a9fff51de76c40576b2175401211765016dac89640f72b0a0eb100
+
+[Master]
+kubectl run -i --tty myfirstpod --image=alpine --restart=Never -- sh
+kubectl delete pod myfirstpod

@@ -1,0 +1,86 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cm-demo
+data:
+  cm-demo-key1: value1
+  tcp_client.py: |
+    #!/usr/bin/env python
+    
+    import socket
+    
+    TCP_IP = '0.0.0.0'
+    TCP_PORT = 5005
+    BUFFER_SIZE = 1024
+    MESSAGE = "Hello, World!".encode('utf-8')
+    
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((TCP_IP, TCP_PORT))
+    s.send(MESSAGE)
+    data = s.recv(BUFFER_SIZE)
+    s.close()
+    
+    print("received data:", data)
+  tcp_server.py: |
+    #!/usr/bin/env python
+    
+    import socket
+    import time
+    
+    TCP_IP = '0.0.0.0'
+    TCP_PORT = 5005
+    BUFFER_SIZE = 20  # Normally 1024, but we want fast response
+    
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind((TCP_IP, TCP_PORT))
+    s.listen(1)
+    
+    while 1:
+      conn, addr = s.accept()
+      print(time.time(), 'Connection address:', addr)
+      while 1:
+        data = conn.recv(BUFFER_SIZE)
+        if not data: break
+        print(time.time(), "received data:", data)
+        conn.send(data)  # echo
+      conn.close()
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-demo
+  labels:
+    app: demo
+spec:
+  containers:
+  - name: container-01
+    image: python:alpine3.8
+    ports:
+    - containerPort: 3000
+    command: ["sh", "-c", "--" ]
+    args: [ "while true; do sleep 30; done;" ]
+    env:
+      - name: CM_DEMO_KEY1
+        valueFrom:
+          configMapKeyRef:
+            name: cm-demo
+            key: cm-demo-key1
+    volumeMounts:
+    - name: test-volume
+      mountPath: /tmp
+  - name: container-02
+    image: python:alpine3.8
+    ports:
+    - containerPort: 3001
+    command: ["sh", "-c", "--" ]
+    args: [ "while true; do sleep 30; done;" ]
+    volumeMounts:
+    - name: test-volume
+      mountPath: /tmp
+  volumes:
+  - name: test-volume
+    configMap:
+      name: cm-demo
+      #items           # optional
+      #  - key:
+      #    path:

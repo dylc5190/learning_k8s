@@ -1,0 +1,29 @@
+apiVersion: v1
+clusters:
+- cluster:
+    insecure-skip-tls-verify: true
+    server: https://10.1.1.101:6443
+  name: dev
+contexts:
+- context:
+    cluster: dev
+    namespace: ns1
+    user: usr1
+  name: ctx
+- context:
+    cluster: dev
+    namespace: ns1
+    user: fool
+  name: ctx1
+current-context: ctx1
+kind: Config
+preferences: {}
+users:
+- name: foo
+  user:
+    password: foofool
+    username: fool
+- name: usr1
+  user:
+    client-certificate: usr1.crt
+    client-key: usr1.key

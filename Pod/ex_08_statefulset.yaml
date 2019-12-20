@@ -1,0 +1,72 @@
+kind: PersistentVolume
+apiVersion: v1
+metadata:
+  name: pv-volume
+  labels:
+    type: local
+spec:
+  storageClassName: manual
+  capacity:
+    storage: 10Mi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/tmp/data"
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: pv-claim
+spec:
+  storageClassName: manual
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 3Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name:  svc-demo
+  labels:
+    app: svc
+spec:
+  ports:
+  - port: 8001
+    name: web
+  clusterIP: None
+  selector:
+    app: demo
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: ss-demo
+spec:
+  serviceName: "svc-demo"
+  replicas: 2
+  selector:
+    matchLabels:
+      app: demo
+  template:
+    metadata:
+      labels:
+        app: demo
+    spec:
+      containers:
+      - name: py-alpine
+        image: python:alpine3.8
+        command: ["sh", "-c", "--" ]
+        args: [ "while true; do sleep 30; done;" ]
+        ports:
+        - containerPort: 8001
+          name: web
+        volumeMounts:
+        - name: myvol
+          mountPath: /tmp/
+      volumes:
+        - name: myvol
+          persistentVolumeClaim:
+            claimName: pv-claim
+

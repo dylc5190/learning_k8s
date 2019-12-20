@@ -1,0 +1,33 @@
+- How to find the peer of a veth?
+  ip netns exec netns1 ethtool -S veth1
+  output will show peer_ifindex: 5
+  enumerate the namespaces to find eth of index 5
+  e.g., ip netns exec netns2 ip link | grep 5
+
+- wget from master to a pod (not in master). tunnel mechanism is Ip-in-Ip.
+
+- Route to service
+
+  with nodePort, service can be accessed from machines not in the cluster
+   it can be accessed from any nodes in the cluster, e.g. http://<physical_ip_of_any_nodes>:<nodePort>/
+  without nodePort, it can only be accessed within the cluster including any nodes or containers.
+   it can be accessed from any of cluster_ip:port, container_ip:target_port and node_ip:node_port.
+   the behavior is different. try to figure it out.
+  
+   container in nodeB
+   nodeA                           nodeA_ip
+   nodeB                           nodeB_ip
+   exec container in nodeA         svc_ip
+   exec container in nodeB         container_ip
+  
+  if I open nodeA_ip:nodeA_port, on nodeA I can see
+    1. tul0: 192.168.1.0 -> 192.168.1.18:3000 (container_ip:target_port)
+    2. enp0s3: clinet <-> nodeA_ip:nodeA_port and other traffic to nodeB is through 6443 and encrypted.
+       is the packet forwarding encapsulated in this encrypted connection?
+  
+  what I observed is iptables redirect the connection (to node or cluster_ip) to pod_ip and let routing 
+  table to handle the rest.
+           
+
+
+

@@ -1,0 +1,141 @@
+* Volume
+* ConfigMap
+* Probe
+* Affinity
+* Taints
+* Job
+* Update
+* Scaling
+* StatefulSet
+
+
+Volume
+======
+
+[Node]
+scp x.x.x.x:/tmp/tcp*.py /tmp
+
+[Master]
+[Master/Console 1]
+$ kubectl create -f ex_01_multiple_containers.yaml
+$ kubectl get pods
+$ kubectl describe pods
+$ kubectl exec pod-demo -c container-01 -it sh
+/# ls /tmp
+/# python tcp_server.py
+
+[Master/Console 2]
+$ kubectl exec pod-demo -c container-02 -it sh
+/# ls /tmp
+/# python tcp_client.py
+
+ConfigMap
+=========
+
+$ kubectl create -f ex_02_configmap.yaml
+$ kubectl describe configmap cm-demo
+
+$ kubectl exec pod-demo -c container-01 -it sh
+/# ls /tmp
+/# python tcp_server.py
+/# echo $CM_DEMO_KEY1
+
+[Master/Console 2]
+$ kubectl exec pod-demo -c container-02 -it sh
+/# python /tmp/tcp_client.py
+/# echo $CM_DEMO_KEY1
+
+$ kubectl delete configmap cm-demo
+
+Probe
+=====
+
+$ kubectl create -f ex_03_probe.yaml
+wait couple of minutes
+$ kubectl get pod pod-demo
+  NAME       READY   STATUS    RESTARTS   AGE
+  pod-demo   1/1     Running   5          10m
+$ kubectl describe pod pod-demo
+  Normal   Killing    5m38s (x3 over 8m58s)  kubelet, coreos2   Killing container with id docker://container-01:Container failed liveness probe.. Container will be killed and recreated.
+  Warning  Unhealthy  8s (x18 over 9m48s)    kubelet, coreos2   Liveness probe failed: dial tcp 192.168.1.18:5005: connect: connection refused
+$ kubectl exec pod-demo -c container-01 -it sh
+/# python /tmp/tcp_server.py
+$ kubectl describe pod pod-demo
+$ kubectl delete pod pod-demo
+$ kubectl delete configmap cm-demo
+
+
+Affinity
+========
+
+$ kubectl apply -f ex_04_affinity.yaml
+$ kubectl get pods
+NAME       READY   STATUS    RESTARTS   AGE
+pod-demo   0/1     Pending   0          31s
+$ kubectl describe pod pod-demo
+Events:
+  Type     Reason            Age               From               Message
+  ----     ------            ----              ----               -------
+  Warning  FailedScheduling  2s (x4 over 62s)  default-scheduler  0/2 nodes are available: 2 node(s) didn't match node selector.
+
+try different values in
+requiredDuringSchedulingIgnoredDuringExecution
+preferredDuringSchedulingIgnoredDuringExecution
+
+Taints
+======
+
+$ kubectl taint nodes coreos2 xyz=abc:NoSchedule
+$ kubectl apply  -f ex_05_taints.yaml
+$ kubectl get pods
+$ kubectl taint nodes coreos2 foo=bar:NoSchedule
+$ kubectl apply  -f ex_05_taints.yaml
+$ kubectl get pods
+$ kubectl taint nodes coreos2 foo:NoSchedule-
+$ kubectl apply  -f ex_05_taints.yaml
+$ kubectl get pods
+
+Job
+===
+
+$ kubectl apply -f ex_06_job.yaml
+$ kubectl get pods
+[Node] cat /tmp/1.txt 
+$ kubectl delete -f ex_06_job.yaml
+
+Update
+======
+
+$ kubectl apply -f ex_07_update.yaml
+$ kubectl set image deployment/deployment-demo container-01=python:alpine3.9
+  (or kubectl edit deployment/deployment-demo) -> an editor is opened
+$ kubectl get pods
+$ kubectl get rs
+$ kubectl rollout status deployment deployment-demo
+$ kubectl rollout history deployment deployment-demo
+$ kubectl rollout undo deployment/deployment-demo
+
+Scaling
+=======
+
+$ kubectl scale deployment deployment-demo --replicas 3
+$ kubectl get pods
+$ kubectl scale deployment deployment-demo --replicas 1
+$ kubectl get pods
+
+autoscaling
+https://ithelp.ithome.com.tw/articles/10196938 Heapster
+https://ithelp.ithome.com.tw/articles/10197046 HPA
+
+StatefulSet
+===========
+
+$ kubectl apply -f ex_08_statefulset.yaml
+$ kubectl exec ss-demo-0 -it sh
+/# nslookup svc-demo
+Name:      svc-demo
+Address 1: 192.168.1.67 ss-demo-0.svc-demo.default.svc.cluster.local
+Address 2: 192.168.1.68 ss-demo-1.svc-demo.default.svc.cluster.local
+
+https://kubernetes.io/docs/tutorials/stateful-application/basic-stateful-set/
+https://kubernetes.io/docs/tasks/configure-pod-container/configure-persistent-volume-storage/
